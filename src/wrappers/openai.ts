@@ -1,4 +1,5 @@
 import type { TrackEvent, WrapOptions } from "../types.js";
+import { firstNumeric } from "./cost.js";
 import { getSafeValue, hasProperty } from "./types.js";
 import type { OpenAIType, WrappedFunction } from "./types.js";
 
@@ -58,6 +59,7 @@ export function wrapOpenAI<T extends OpenAIType>(
 						const usage = hasProperty(result, "usage")
 							? (result.usage as Record<string, unknown>)
 							: {};
+						const cost = resolveCost(usage);
 
 						tracker({
 							requestId,
@@ -70,6 +72,7 @@ export function wrapOpenAI<T extends OpenAIType>(
 								params.model ||
 								"openai-chat") as string,
 							latency,
+							cost,
 							provider:
 								hasProperty(openai, "baseURL") &&
 								String(openai.baseURL).includes("openrouter")
@@ -140,4 +143,13 @@ export function wrapOpenAI<T extends OpenAIType>(
 	wrappedCreate.__noryen_wrapped__ = true;
 
 	return wrapped as T;
+}
+
+function resolveCost(usage: Record<string, unknown>): number | undefined {
+	return firstNumeric(usage, [
+		["cost"],
+		["cost_details", "upstream_inference_cost"],
+		["cost_details", "total_cost"],
+		["cost_details", "inference_cost"],
+	]);
 }

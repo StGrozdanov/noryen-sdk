@@ -1,4 +1,5 @@
 import type { TrackEvent, WrapOptions } from "../types.js";
+import { firstNumeric } from "./cost.js";
 import { getSafeValue, hasProperty } from "./types.js";
 import type { GoogleGenAIType, WrappedFunction } from "./types.js";
 
@@ -62,6 +63,7 @@ export function wrapGemini<T extends GoogleGenAIType>(
 					const usage = hasProperty(response, "usageMetadata")
 						? (response.usageMetadata as Record<string, unknown>)
 						: {};
+					const cost = resolveCost(resultRecord, response, usage);
 
 					tracker({
 						requestId,
@@ -73,6 +75,7 @@ export function wrapGemini<T extends GoogleGenAIType>(
 						model: (options?.modelOverride ||
 							getSafeValue<string>(params, ["model"], "gemini")) as string,
 						latency,
+						cost,
 						provider: "google",
 						success: true,
 						inputTokens: getSafeValue<number | undefined>(
@@ -129,4 +132,17 @@ export function wrapGemini<T extends GoogleGenAIType>(
 	wrappedGenerate.__noryen_wrapped__ = true;
 
 	return wrapped as T;
+}
+
+function resolveCost(
+	resultRecord: Record<string, unknown>,
+	response: Record<string, unknown>,
+	usage: Record<string, unknown>,
+): number | undefined {
+	return (
+		firstNumeric(resultRecord, [["cost"]]) ??
+		firstNumeric(response, [["cost"]]) ??
+		firstNumeric(usage, [["cost"], ["totalCost"]]) ??
+		undefined
+	);
 }

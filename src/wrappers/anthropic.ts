@@ -1,4 +1,5 @@
 import type { TrackEvent, WrapOptions } from "../types.js";
+import { firstNumeric } from "./cost.js";
 import { getSafeValue, hasProperty } from "./types.js";
 import type { AnthropicType, WrappedFunction } from "./types.js";
 
@@ -69,6 +70,7 @@ export function wrapAnthropic<T extends AnthropicType>(
 						["output_tokens"],
 						undefined,
 					);
+					const cost = resolveCost(usage);
 
 					tracker({
 						requestId,
@@ -81,6 +83,7 @@ export function wrapAnthropic<T extends AnthropicType>(
 							params.model ||
 							"anthropic-message") as string,
 						latency,
+						cost,
 						provider: "anthropic",
 						success: true,
 						inputTokens,
@@ -132,4 +135,13 @@ export function wrapAnthropic<T extends AnthropicType>(
 	wrappedCreate.__noryen_wrapped__ = true;
 
 	return wrapped as T;
+}
+
+function resolveCost(usage: Record<string, unknown>): number | undefined {
+	return firstNumeric(usage, [
+		["cost"],
+		["total_cost"],
+		["input_cost"],
+		["output_cost"],
+	]);
 }
