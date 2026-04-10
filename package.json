@@ -1,0 +1,67 @@
+{
+	"name": "@noryen/sdk",
+	"version": "1.0.0",
+	"description": "Open-source TypeScript SDK for Noryen AI trace tracking.",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/StGrozdanov/noryen-sdk.git"
+	},
+	"homepage": "https://github.com/StGrozdanov/noryen-sdk#readme",
+	"bugs": {
+		"url": "https://github.com/StGrozdanov/noryen-sdk/issues"
+	},
+	"keywords": ["noryen", "ai", "llm", "observability", "tracking", "sdk"],
+	"engines": {
+		"node": ">=18"
+	},
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		},
+		"./wrappers": {
+			"import": "./dist/wrappers/index.js",
+			"types": "./dist/wrappers/index.d.ts"
+		}
+	},
+	"files": ["dist", "README.md", "LICENSE"],
+	"publishConfig": {
+		"access": "public"
+	},
+	"sideEffects": false,
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsc -w",
+		"check": "biome check --write .",
+		"type-check": "tsc --noEmit",
+		"prepack": "npm run build",
+		"prepublishOnly": "npm run check && npm run type-check && npm run build"
+	},
+	"devDependencies": {
+		"@anthropic-ai/sdk": "^0.81.0",
+		"@biomejs/biome": "^1.9.4",
+		"@google/genai": "^1.29.0",
+		"openai": "^6.33.0",
+		"typescript": "^5.7.3"
+	},
+	"peerDependencies": {
+		"@anthropic-ai/sdk": ">=0.20.0",
+		"@google/genai": ">=0.1.0",
+		"openai": ">=4.0.0"
+	},
+	"peerDependenciesMeta": {
+		"openai": {
+			"optional": true
+		},
+		"@anthropic-ai/sdk": {
+			"optional": true
+		},
+		"@google/genai": {
+			"optional": true
+		}
+	}
+}

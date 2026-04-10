@@ -1,0 +1,49 @@
+name: SDK Deploy
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Check, Build, Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: latest
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run check
+        run: npm run check
+
+      - name: Run type-check
+        run: npm run type-check
+
+      - name: Build SDK
+        run: npm run build
+
+      - name: Ensure package name is scoped
+        run: node -e "const p=require('./package.json'); if(p.name!=='@noryen/sdk'){throw new Error('Package name must be @noryen/sdk')}"
+
+      - name: Publish package
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
