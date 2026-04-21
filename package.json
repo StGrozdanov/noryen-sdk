@@ -1,6 +1,6 @@
 {
 	"name": "@noryen/sdk",
-	"version": "1.1.1",
+	"version": "1.1.2",
 	"description": "Open-source TypeScript SDK for Noryen AI trace tracking.",
 	"license": "MIT",
 	"repository": {
@@ -11,7 +11,14 @@
 	"bugs": {
 		"url": "https://github.com/StGrozdanov/noryen-sdk/issues"
 	},
-	"keywords": ["noryen", "ai", "llm", "observability", "tracking", "sdk"],
+	"keywords": [
+		"noryen",
+		"ai",
+		"llm",
+		"observability",
+		"tracking",
+		"sdk"
+	],
 	"engines": {
 		"node": ">=18"
 	},
@@ -28,7 +35,11 @@
 			"types": "./dist/wrappers/index.d.ts"
 		}
 	},
-	"files": ["dist", "README.md", "LICENSE"],
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
 	"publishConfig": {
 		"access": "public"
 	},
