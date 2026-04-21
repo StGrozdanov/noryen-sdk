@@ -11,14 +11,7 @@
 	"bugs": {
 		"url": "https://github.com/StGrozdanov/noryen-sdk/issues"
 	},
-	"keywords": [
-		"noryen",
-		"ai",
-		"llm",
-		"observability",
-		"tracking",
-		"sdk"
-	],
+	"keywords": ["noryen", "ai", "llm", "observability", "tracking", "sdk"],
 	"engines": {
 		"node": ">=18"
 	},
@@ -35,11 +28,7 @@
 			"types": "./dist/wrappers/index.d.ts"
 		}
 	},
-	"files": [
-		"dist",
-		"README.md",
-		"LICENSE"
-	],
+	"files": ["dist", "README.md", "LICENSE"],
 	"publishConfig": {
 		"access": "public"
 	},
