@@ -17,8 +17,27 @@ export interface TrackEvent {
 	inputTokens?: number;
 	outputTokens?: number;
 	totalTokens?: number;
+	context?: TrackContext;
 	metadata?: Record<string, unknown>;
 	timestamp?: string;
+}
+
+export interface TrackContextDocument {
+	id?: string;
+	content: string;
+	source?: string;
+	score?: number;
+	metadata?: Record<string, unknown>;
+}
+
+export interface TrackContext {
+	documents?: TrackContextDocument[];
+	retrieval?: {
+		query?: string;
+		method?: string;
+		k?: number;
+	};
+	instructions?: string;
 }
 
 export interface WrapOptions {
@@ -28,4 +47,6 @@ export interface WrapOptions {
 	modelOverride?: string;
 	/** Enable wrapper-level debug warnings */
 	debug?: boolean;
+	/** Parse `<document>...</document>` blocks from prompts (off by default) */
+	parseDocumentTags?: boolean;
 }
