@@ -1,4 +1,9 @@
 import type { TrackEvent, WrapOptions } from "../types.js";
+import {
+	extractDocumentTagBlocks,
+	normalizeContent,
+	safeExtractContext,
+} from "./context.js";
 import { firstNumeric } from "./cost.js";
 import { getSafeValue, hasProperty } from "./types.js";
 import type { AnthropicType, WrappedFunction } from "./types.js";
@@ -71,6 +76,11 @@ export function wrapAnthropic<T extends AnthropicType>(
 						undefined,
 					);
 					const cost = resolveCost(usage);
+					const context = safeExtractContext(
+						() => extractAnthropicContext(params, options),
+						options?.debug,
+						"anthropic",
+					);
 
 					tracker({
 						requestId,
@@ -92,6 +102,7 @@ export function wrapAnthropic<T extends AnthropicType>(
 							inputTokens != null && outputTokens != null
 								? inputTokens + outputTokens
 								: undefined,
+						context,
 						metadata: {
 							...options?.metadata,
 							rawRequest: params,
@@ -103,6 +114,11 @@ export function wrapAnthropic<T extends AnthropicType>(
 				} catch (err) {
 					const latency = Date.now() - start;
 					const errorMessage = err instanceof Error ? err.message : String(err);
+					const context = safeExtractContext(
+						() => extractAnthropicContext(params, options),
+						options?.debug,
+						"anthropic",
+					);
 
 					tracker({
 						requestId,
@@ -118,6 +134,7 @@ export function wrapAnthropic<T extends AnthropicType>(
 						provider: "anthropic",
 						success: false,
 						error: errorMessage,
+						context,
 						metadata: {
 							...options?.metadata,
 							rawRequest: params,
@@ -135,6 +152,105 @@ export function wrapAnthropic<T extends AnthropicType>(
 	wrappedCreate.__noryen_wrapped__ = true;
 
 	return wrapped as T;
+}
+
+function extractAnthropicContext(
+	params: Record<string, unknown>,
+	options?: WrapOptions,
+): TrackEvent["context"] {
+	const messages = Array.isArray(params.messages)
+		? (params.messages as Record<string, unknown>[])
+		: [];
+	const documents: NonNullable<TrackEvent["context"]>["documents"] = [];
+	let query: string | undefined;
+
+	for (const message of messages) {
+		const content = message.content;
+		const role = String(message.role || "").toLowerCase();
+		if (role === "user") {
+			const queryText = normalizeContent(content);
+			if (queryText !== "") {
+				query = queryText;
+			}
+		}
+		if (Array.isArray(content)) {
+			for (const part of content) {
+				if (!part || typeof part !== "object") {
+					continue;
+				}
+				const block = part as Record<string, unknown>;
+				const blockType = String(block.type || "");
+				if (blockType === "tool_result") {
+					const toolContent = normalizeContent(block.content);
+					if (toolContent !== "") {
+						documents.push({
+							content: toolContent,
+							source: "anthropic.tool_result",
+							metadata: { tool_use_id: block.tool_use_id },
+						});
+					}
+				}
+				if (blockType === "document") {
+					const source = hasProperty(block, "source")
+						? (block.source as Record<string, unknown>)
+						: undefined;
+					const documentText = source ? normalizeContent(source.data) : "";
+					if (documentText !== "") {
+						documents.push({
+							content: documentText,
+							source: "anthropic.document",
+							metadata: {
+								title: block.title,
+								citations: block.citations,
+								context: block.context,
+							},
+						});
+					}
+				}
+			}
+		}
+
+		if (options?.parseDocumentTags) {
+			const textBody = normalizeContent(content);
+			const blocks = extractDocumentTagBlocks(textBody);
+			for (const text of blocks) {
+				documents.push({
+					content: text,
+					source: "anthropic.document_block",
+					metadata: { role: message.role },
+				});
+			}
+		}
+	}
+
+	const system = params.system;
+	const instructions = normalizeContent(system);
+
+	if (options?.parseDocumentTags) {
+		const systemBlocks = extractDocumentTagBlocks(instructions);
+		for (const text of systemBlocks) {
+			documents.push({
+				content: text,
+				source: "anthropic.system_document_block",
+			});
+		}
+	}
+
+	if (documents.length === 0 && instructions === "") {
+		return undefined;
+	}
+	return {
+		documents: documents.length > 0 ? documents : undefined,
+		instructions: instructions !== "" ? instructions : undefined,
+		retrieval:
+			documents.length > 0 || query
+				? {
+						query,
+						method: "sdk_auto",
+						k: documents.length,
+					}
+				: undefined,
+	};
 }
 
 function resolveCost(usage: Record<string, unknown>): number | undefined {

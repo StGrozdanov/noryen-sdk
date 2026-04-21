@@ -1,4 +1,5 @@
 import type { TrackEvent, WrapOptions } from "../types.js";
+import { normalizeContent, safeExtractContext } from "./context.js";
 import { firstNumeric } from "./cost.js";
 import { getSafeValue, hasProperty } from "./types.js";
 import type { GoogleGenAIType, WrappedFunction } from "./types.js";
@@ -64,6 +65,11 @@ export function wrapGemini<T extends GoogleGenAIType>(
 						? (response.usageMetadata as Record<string, unknown>)
 						: {};
 					const cost = resolveCost(resultRecord, response, usage);
+					const context = safeExtractContext(
+						() => extractGeminiContext(params, response),
+						options?.debug,
+						"gemini",
+					);
 
 					tracker({
 						requestId,
@@ -93,6 +99,7 @@ export function wrapGemini<T extends GoogleGenAIType>(
 							["totalTokenCount"],
 							undefined,
 						),
+						context,
 						metadata: {
 							...options?.metadata,
 							rawRequest: params,
@@ -103,6 +110,11 @@ export function wrapGemini<T extends GoogleGenAIType>(
 					return result;
 				} catch (err) {
 					const latency = Date.now() - start;
+					const context = safeExtractContext(
+						() => extractGeminiContext(params),
+						options?.debug,
+						"gemini",
+					);
 					tracker({
 						requestId,
 						timestamp: new Date().toISOString(),
@@ -116,6 +128,7 @@ export function wrapGemini<T extends GoogleGenAIType>(
 						provider: "google",
 						success: false,
 						error: err instanceof Error ? err.message : String(err),
+						context,
 						metadata: {
 							...options?.metadata,
 							rawRequest: params,
@@ -132,6 +145,82 @@ export function wrapGemini<T extends GoogleGenAIType>(
 	wrappedGenerate.__noryen_wrapped__ = true;
 
 	return wrapped as T;
+}
+
+function extractGeminiContext(
+	params: Record<string, unknown>,
+	response?: Record<string, unknown>,
+): TrackEvent["context"] {
+	const documents: NonNullable<TrackEvent["context"]>["documents"] = [];
+	let query: string | undefined;
+	const instructions: string[] = [];
+	const systemInstruction = hasProperty(params, "systemInstruction")
+		? normalizeContent(params.systemInstruction)
+		: "";
+	if (systemInstruction !== "") {
+		instructions.push(systemInstruction);
+	}
+
+	const contents = Array.isArray(params.contents)
+		? (params.contents as Record<string, unknown>[])
+		: [];
+	for (const content of contents) {
+		const role = String(content.role || "").toLowerCase();
+		const parts = Array.isArray(content.parts)
+			? (content.parts as Record<string, unknown>[])
+			: [];
+		const textContent = normalizeContent(parts);
+		if (role === "user" && textContent !== "") {
+			query = textContent;
+		}
+		if (role === "system" && textContent !== "") {
+			instructions.push(textContent);
+		}
+		for (const part of parts) {
+			if (!part || typeof part !== "object") {
+				continue;
+			}
+			if ("functionResponse" in part) {
+				const payload = part.functionResponse;
+				documents.push({
+					content: JSON.stringify(payload),
+					source: "gemini.function_response",
+				});
+				continue;
+			}
+			if ("function_response" in part) {
+				const payload = part.function_response;
+				documents.push({
+					content: JSON.stringify(payload),
+					source: "gemini.function_response",
+				});
+			}
+		}
+	}
+
+	if (response?.groundingMetadata) {
+		documents.push({
+			content: JSON.stringify(response.groundingMetadata),
+			source: "gemini.grounding_metadata",
+		});
+	}
+
+	if (documents.length === 0 && instructions.length === 0) {
+		return undefined;
+	}
+	return {
+		documents: documents.length > 0 ? documents : undefined,
+		instructions:
+			instructions.length > 0 ? instructions.join("\n\n") : undefined,
+		retrieval:
+			documents.length > 0 || query
+				? {
+						query,
+						method: "sdk_auto",
+						k: documents.length,
+					}
+				: undefined,
+	};
 }
 
 function resolveCost(

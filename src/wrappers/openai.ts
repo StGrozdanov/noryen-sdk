@@ -1,4 +1,9 @@
 import type { TrackEvent, WrapOptions } from "../types.js";
+import {
+	extractDocumentTagBlocks,
+	normalizeContent,
+	safeExtractContext,
+} from "./context.js";
 import { firstNumeric } from "./cost.js";
 import { getSafeValue, hasProperty } from "./types.js";
 import type { OpenAIType, WrappedFunction } from "./types.js";
@@ -60,6 +65,11 @@ export function wrapOpenAI<T extends OpenAIType>(
 							? (result.usage as Record<string, unknown>)
 							: {};
 						const cost = resolveCost(usage);
+						const context = safeExtractContext(
+							() => extractOpenAIContext(params, options),
+							options?.debug,
+							"openai",
+						);
 
 						tracker({
 							requestId,
@@ -94,6 +104,7 @@ export function wrapOpenAI<T extends OpenAIType>(
 								["total_tokens"],
 								undefined,
 							),
+							context,
 							metadata: {
 								...options?.metadata,
 								rawRequest: params,
@@ -106,6 +117,11 @@ export function wrapOpenAI<T extends OpenAIType>(
 						const latency = Date.now() - start;
 						const errorMessage =
 							err instanceof Error ? err.message : String(err);
+						const context = safeExtractContext(
+							() => extractOpenAIContext(params, options),
+							options?.debug,
+							"openai",
+						);
 
 						tracker({
 							requestId,
@@ -125,6 +141,7 @@ export function wrapOpenAI<T extends OpenAIType>(
 									: "openai",
 							success: false,
 							error: errorMessage,
+							context,
 							metadata: {
 								...options?.metadata,
 								rawRequest: params,
@@ -143,6 +160,146 @@ export function wrapOpenAI<T extends OpenAIType>(
 	wrappedCreate.__noryen_wrapped__ = true;
 
 	return wrapped as T;
+}
+
+function extractOpenAIContext(
+	params: Record<string, unknown>,
+	options?: WrapOptions,
+): TrackEvent["context"] {
+	const messages = Array.isArray(params.messages)
+		? (params.messages as Record<string, unknown>[])
+		: [];
+	if (messages.length === 0) {
+		return undefined;
+	}
+
+	const documents: NonNullable<TrackEvent["context"]>["documents"] = [];
+	const instructions: string[] = [];
+	let query: string | undefined;
+
+	for (const message of messages) {
+		const role = String(message.role || "").toLowerCase();
+		const content = normalizeContent(message.content);
+		if (role === "system" && content !== "") {
+			instructions.push(content);
+		}
+		if (role === "user") {
+			const userText = extractUserQuery(message.content);
+			if (userText !== "") {
+				query = userText;
+			}
+		}
+		if (role === "tool" && content !== "") {
+			documents.push({
+				content,
+				source: "openai.tool_result",
+				metadata: {
+					role: message.role,
+					name: message.name,
+					tool_call_id: message.tool_call_id,
+				},
+			});
+			continue;
+		}
+
+		if (Array.isArray(message.content)) {
+			for (const item of message.content) {
+				if (!item || typeof item !== "object") {
+					continue;
+				}
+				const record = item as Record<string, unknown>;
+				if (record.type !== "file_search_result") {
+					continue;
+				}
+				const results = Array.isArray(record.results)
+					? (record.results as Record<string, unknown>[])
+					: [];
+				for (const result of results) {
+					const resultContent = normalizeContent(result.content);
+					if (resultContent === "") {
+						continue;
+					}
+					const score =
+						typeof result.score === "number" ? result.score : undefined;
+					documents.push({
+						id:
+							typeof result.file_id === "string"
+								? result.file_id
+								: typeof result.id === "string"
+									? result.id
+									: undefined,
+						content: resultContent,
+						source: "openai.file_search_result",
+						score,
+						metadata: {
+							filename: result.filename,
+							role: message.role,
+						},
+					});
+				}
+			}
+		}
+
+		if (options?.parseDocumentTags) {
+			const blocks = extractDocumentTagBlocks(content);
+			for (const text of blocks) {
+				documents.push({
+					content: text,
+					source: "openai.message_document_block",
+					metadata: { role: message.role },
+				});
+			}
+		}
+	}
+
+	if (documents.length === 0 && instructions.length === 0) {
+		return undefined;
+	}
+
+	return {
+		documents: documents.length > 0 ? documents : undefined,
+		instructions:
+			instructions.length > 0 ? instructions.join("\n\n") : undefined,
+		retrieval:
+			documents.length > 0 || query
+				? {
+						query,
+						method: "sdk_auto",
+						k: documents.length,
+					}
+				: undefined,
+	};
+}
+
+function extractUserQuery(content: unknown): string {
+	if (typeof content === "string") {
+		return content.trim();
+	}
+	if (!Array.isArray(content)) {
+		return normalizeContent(content);
+	}
+	const parts: string[] = [];
+	for (const item of content) {
+		if (typeof item === "string") {
+			const text = item.trim();
+			if (text !== "") {
+				parts.push(text);
+			}
+			continue;
+		}
+		if (!item || typeof item !== "object") {
+			continue;
+		}
+		const record = item as Record<string, unknown>;
+		if (record.type === "file_search_result") {
+			continue;
+		}
+		const text = normalizeContent(record);
+		if (text !== "") {
+			parts.push(text);
+		}
+	}
+	return parts.join("\n").trim();
 }
 
 function resolveCost(usage: Record<string, unknown>): number | undefined {
