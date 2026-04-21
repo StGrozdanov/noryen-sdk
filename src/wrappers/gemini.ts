@@ -1,5 +1,9 @@
 import type { TrackEvent, WrapOptions } from "../types.js";
-import { normalizeContent, safeExtractContext } from "./context.js";
+import {
+	extractDocumentTagBlocks,
+	normalizeContent,
+	safeExtractContext,
+} from "./context.js";
 import { firstNumeric } from "./cost.js";
 import { getSafeValue, hasProperty } from "./types.js";
 import type { GoogleGenAIType, WrappedFunction } from "./types.js";
@@ -66,7 +70,7 @@ export function wrapGemini<T extends GoogleGenAIType>(
 						: {};
 					const cost = resolveCost(resultRecord, response, usage);
 					const context = safeExtractContext(
-						() => extractGeminiContext(params, response),
+						() => extractGeminiContext(params, response, options),
 						options?.debug,
 						"gemini",
 					);
@@ -111,7 +115,7 @@ export function wrapGemini<T extends GoogleGenAIType>(
 				} catch (err) {
 					const latency = Date.now() - start;
 					const context = safeExtractContext(
-						() => extractGeminiContext(params),
+						() => extractGeminiContext(params, undefined, options),
 						options?.debug,
 						"gemini",
 					);
@@ -150,6 +154,7 @@ export function wrapGemini<T extends GoogleGenAIType>(
 function extractGeminiContext(
 	params: Record<string, unknown>,
 	response?: Record<string, unknown>,
+	options?: WrapOptions,
 ): TrackEvent["context"] {
 	const documents: NonNullable<TrackEvent["context"]>["documents"] = [];
 	let query: string | undefined;
@@ -175,6 +180,16 @@ function extractGeminiContext(
 		}
 		if (role === "system" && textContent !== "") {
 			instructions.push(textContent);
+		}
+		if (options?.parseDocumentTags) {
+			const blocks = extractDocumentTagBlocks(textContent);
+			for (const text of blocks) {
+				documents.push({
+					content: text,
+					source: "gemini.document_block",
+					metadata: { role: content.role },
+				});
+			}
 		}
 		for (const part of parts) {
 			if (!part || typeof part !== "object") {

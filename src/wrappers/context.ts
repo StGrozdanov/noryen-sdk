@@ -65,7 +65,8 @@ export function safeExtractContext<T>(
 }
 
 export function extractDocumentTagBlocks(text: string): string[] {
-	if (!text.includes("<document>") || !text.includes("</document>")) {
+	const lower = text.toLowerCase();
+	if (!lower.includes("<document>") || !lower.includes("</document>")) {
 		return [];
 	}
 	const matches = text.match(/<document>([\s\S]*?)<\/document>/gi) || [];
